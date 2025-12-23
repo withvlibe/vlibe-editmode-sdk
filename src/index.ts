@@ -20,7 +20,7 @@
  */
 
 // Core functions
-export { initEditMode, isEditModeEnabled, getSelectedElementInfo } from './edit-mode';
+export { initEditMode, isEditModeEnabled, getSelectedElementInfo, applyOverrides, loadAndApplyOverrides } from './edit-mode';
 
 // Types
 export type {

@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState, useCallback, createContext, useContext } from 'react';
-import { initEditMode, isEditModeEnabled, getSelectedElementInfo, type ElementInfo } from './edit-mode';
+import { initEditMode, isEditModeEnabled, getSelectedElementInfo, loadAndApplyOverrides, applyOverrides, type ElementInfo } from './edit-mode';
 
 // Context for edit mode state
 interface EditModeContextValue {
@@ -52,6 +52,23 @@ export function EditModeProvider({ children }: { children: React.ReactNode }) {
     const cleanup = initEditMode();
     setIsInitialized(true);
 
+    // Load and apply text/image overrides after DOM is ready
+    const applyOverridesOnLoad = () => {
+      // Check if overrides were pre-loaded by VlibeOverridesScript
+      if ((window as any).__VLIBE_OVERRIDES__) {
+        applyOverrides((window as any).__VLIBE_OVERRIDES__);
+        return;
+      }
+      // Otherwise fetch from API
+      loadAndApplyOverrides('/api/vlibe-overrides').catch(() => {
+        // Fallback: try loading from lib directory
+        loadAndApplyOverrides('/lib/vlibe-edit-text-overrides.json').catch(() => {});
+      });
+    };
+
+    // Apply after a short delay to ensure DOM is rendered
+    const timeoutId = setTimeout(applyOverridesOnLoad, 100);
+
     // Listen for edit mode state changes
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
@@ -80,6 +97,7 @@ export function EditModeProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cleanup();
+      clearTimeout(timeoutId);
       window.removeEventListener('message', handleMessage);
       setIsInitialized(false);
     };

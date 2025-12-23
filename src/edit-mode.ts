@@ -546,3 +546,111 @@ export function isEditModeEnabled(): boolean {
 export function getSelectedElementInfo(): ElementInfo | null {
   return selectedElement ? getElementInfo(selectedElement) : null;
 }
+
+// Store for text/image overrides to persist across React renders
+let storedOverrides: Record<string, { type: string; value: string }> = {};
+let overrideObserver: MutationObserver | null = null;
+
+/**
+ * Apply a single override to an element
+ */
+function applyOverrideToElement(selector: string, override: { type: string; value: string }): boolean {
+  try {
+    const element = document.querySelector(selector);
+    if (!element) return false;
+
+    if (override.type === 'text') {
+      // Check if already has correct content
+      const currentText = element.textContent?.trim();
+      if (currentText === override.value) return true;
+
+      // Find the first text node and update it
+      const textNode = Array.from(element.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+      if (textNode) {
+        textNode.textContent = override.value;
+      } else {
+        element.textContent = override.value;
+      }
+      console.log('[VlibeEditMode] Applied text override to', selector);
+      return true;
+    } else if (override.type === 'image') {
+      if (element.tagName.toLowerCase() === 'img') {
+        if ((element as HTMLImageElement).src !== override.value) {
+          (element as HTMLImageElement).src = override.value;
+        }
+      } else {
+        (element as HTMLElement).style.backgroundImage = `url(${override.value})`;
+      }
+      console.log('[VlibeEditMode] Applied image override to', selector);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('[VlibeEditMode] Failed to apply override:', err);
+    return false;
+  }
+}
+
+/**
+ * Apply all stored overrides
+ */
+function applyAllOverrides(): void {
+  for (const [selector, override] of Object.entries(storedOverrides)) {
+    applyOverrideToElement(selector, override);
+  }
+}
+
+/**
+ * Apply text/image overrides from a JSON object
+ * Uses MutationObserver to persist changes across React re-renders
+ */
+export function applyOverrides(overrides: Record<string, { type: string; value: string }>): void {
+  if (typeof window === 'undefined') return;
+
+  // Store overrides for re-application
+  storedOverrides = { ...storedOverrides, ...overrides };
+
+  // Apply immediately
+  applyAllOverrides();
+
+  // Set up MutationObserver to re-apply when React re-renders
+  if (!overrideObserver) {
+    overrideObserver = new MutationObserver((mutations) => {
+      // Debounce - only apply if there are stored overrides
+      if (Object.keys(storedOverrides).length > 0) {
+        // Use requestAnimationFrame to batch changes
+        requestAnimationFrame(() => {
+          applyAllOverrides();
+        });
+      }
+    });
+
+    overrideObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+}
+
+/**
+ * Load and apply text/image overrides from a URL
+ */
+export async function loadAndApplyOverrides(url: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (response.status !== 404) {
+        console.warn('[VlibeEditMode] Failed to load overrides:', response.status);
+      }
+      return;
+    }
+    const overrides = await response.json();
+    applyOverrides(overrides);
+  } catch (err) {
+    // File might not exist, which is fine
+    console.log('[VlibeEditMode] No text overrides found or failed to load');
+  }
+}
